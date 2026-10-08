@@ -27,6 +27,15 @@
     .label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px}
     .value{font-size:25px;font-weight:750;margin-top:5px}.sub{font-size:13px;color:var(--muted);margin-top:4px}
     .two{grid-template-columns:1fr 1fr;margin-top:12px}
+    .accounts{grid-template-columns:1fr 1fr;margin-top:12px}
+    .account-card{position:relative;overflow:hidden}
+    .account-top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+    .account-main{font-size:30px;font-weight:800;margin-top:6px}
+    .account-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+    .metric{background:var(--soft);border-radius:12px;padding:10px}
+    .metric .m-label{font-size:12px;color:var(--muted)}
+    .metric .m-value{font-size:17px;font-weight:750;margin-top:3px}
+    .transfer-line{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
     h2{font-size:17px;margin:0 0 4px}.hint{font-size:13px;color:var(--muted);margin-bottom:12px}
     .row{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:14px;padding:11px 12px;margin-top:8px;background:#fff}
     .left{display:flex;align-items:center;gap:10px;min-width:0}.left span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -50,7 +59,7 @@
     .section-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
     .pill{font-size:12px;color:var(--muted);border:1px solid var(--line);padding:6px 8px;border-radius:999px;background:#fff}
     @media(max-width:760px){
-      .summary{grid-template-columns:1fr 1fr}.two{grid-template-columns:1fr}.budgets{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}.btn{width:100%}
+      .summary{grid-template-columns:1fr 1fr}.two,.accounts{grid-template-columns:1fr}.budgets{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}.btn{width:100%}
       .top{align-items:flex-start}.month{padding:8px 10px}
     }
     @media(max-width:390px){.summary{grid-template-columns:1fr}.budgets{grid-template-columns:1fr}}
@@ -68,6 +77,32 @@
     <div class="card"><div class="label">🐷 Sparen</div><div class="value">450,00 €</div><label class="left sub"><input id="savingDone" type="checkbox"><span>überwiesen</span></label></div>
     <div class="card"><div class="label">🧮 Geplant gesamt</div><div id="plannedTotal" class="value"></div></div>
     <div class="card"><div class="label">✅ Frei nach Planung</div><div id="freeTotal" class="value"></div><div class="sub">nach Fixkosten, Budgets & Sparen</div></div>
+  </section>
+
+  <section class="grid accounts">
+    <div class="card account-card">
+      <div class="account-top">
+        <div><div class="label">🏦 Sparkasse</div><div id="sparkAccountRest" class="account-main">–</div><div class="sub">aktueller Rest laut deinen Einträgen</div></div>
+        <span class="pill">Bankkonto</span>
+      </div>
+      <div class="account-grid">
+        <div class="metric"><div class="m-label">📌 Noch reserviert</div><div id="sparkReserved" class="m-value">–</div></div>
+        <div class="metric"><div class="m-label">✅ Wirklich frei</div><div id="sparkReallyFree" class="m-value">–</div></div>
+      </div>
+      <label class="left transfer-line"><input id="revolutTransferred" type="checkbox"><span>💳 Revolut-Betrag 1.041,00 € überwiesen</span></label>
+    </div>
+
+    <div class="card account-card">
+      <div class="account-top">
+        <div><div class="label">💳 Revolut</div><div id="revoAccountRest" class="account-main">–</div><div class="sub">noch im Revolut-Topf verfügbar</div></div>
+        <span class="pill">Revolut</span>
+      </div>
+      <div class="account-grid">
+        <div class="metric"><div class="m-label">📌 Fixkosten reserviert</div><div id="revoReservedFixed" class="m-value">–</div></div>
+        <div class="metric"><div class="m-label">📊 Budgets noch offen</div><div id="revoReservedBudgets" class="m-value">–</div></div>
+      </div>
+      <div class="metric" style="margin-top:8px"><div class="m-label">✅ Wirklich frei nach Reserven</div><div id="revoReallyFree" class="m-value">–</div></div>
+    </div>
   </section>
 
   <section class="grid two">
@@ -132,7 +167,7 @@
   function monthKey(d=new Date()){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')}
   function blankMonth(){
     const spent={};Object.keys(config.budgets).forEach(k=>spent[k]=0);
-    return {sparkDone:[],revoDone:[],savingDone:false,spent,history:[]};
+    return {sparkDone:[],revoDone:[],savingDone:false,revolutTransferred:false,spent,history:[]};
   }
   function load(){
     try{
@@ -142,6 +177,12 @@
   }
   let store=load();
   if(!store.months[store.current]) store.months[store.current]=blankMonth();
+  Object.values(store.months).forEach(m=>{
+    if(typeof m.revolutTransferred!=='boolean') m.revolutTransferred=false;
+    if(typeof m.savingDone!=='boolean') m.savingDone=false;
+    if(!m.spent) m.spent={};
+    Object.keys(config.budgets).forEach(k=>{if(typeof m.spent[k]!=='number')m.spent[k]=0});
+  });
 
   const $=s=>document.querySelector(s);
   const sparkList=$('#sparkList'),revoList=$('#revoFixedList'),budgetList=$('#budgetList'),history=$('#history');
@@ -149,7 +190,7 @@
 
   function save(){localStorage.setItem(KEY,JSON.stringify(store))}
   function cur(){return store.months[store.current]}
-  function ensureMonth(k){if(!store.months[k])store.months[k]=blankMonth()}
+  function ensureMonth(k){if(!store.months[k])store.months[k]=blankMonth();if(typeof store.months[k].revolutTransferred!=='boolean')store.months[k].revolutTransferred=false}
 
   function buildMonthSelect(){
     const sel=$('#monthSelect');sel.innerHTML='';
@@ -176,6 +217,7 @@
     $('#sparkStatus').textContent=cur().sparkDone.length+'/'+config.sparkFixed.length+' · '+fmt.format(sparkTot-sparkPaid)+' offen';
     $('#revoStatus').textContent=cur().revoDone.length+'/'+config.revoFixed.length+' · '+fmt.format(revoTot-revoPaid)+' offen';
     $('#savingDone').checked=cur().savingDone;
+    $('#revolutTransferred').checked=!!cur().revolutTransferred;
   }
 
   function renderBudgets(){
@@ -193,11 +235,41 @@
   }
 
   function renderSummary(){
-    const fixed=config.sparkFixed.reduce((a,x)=>a+x[1],0)+config.revoFixed.reduce((a,x)=>a+x[1],0);
-    const budgets=Object.values(config.budgets).reduce((a,b)=>a+b.limit,0);
-    const planned=fixed+budgets+config.saving;
+    const sparkTotal=config.sparkFixed.reduce((a,x)=>a+x[1],0);
+    const revoFixedTotal=config.revoFixed.reduce((a,x)=>a+x[1],0);
+    const allBudgetTotal=Object.values(config.budgets).reduce((a,b)=>a+b.limit,0);
+    const revoBudgetTotal=Object.values(config.budgets).filter(b=>b.account==='Revolut').reduce((a,b)=>a+b.limit,0);
+    const careBudget=config.budgets.care.limit;
+    const revoPlanned=revoFixedTotal+revoBudgetTotal;
+    const planned=sparkTotal+revoFixedTotal+allBudgetTotal+config.saving;
     $('#plannedTotal').textContent=fmt.format(planned);
     $('#freeTotal').textContent=fmt.format(config.income-planned);
+
+    const sparkPaid=cur().sparkDone.reduce((a,i)=>a+(config.sparkFixed[i]?.[1]||0),0);
+    const sparkOpen=Math.max(0,sparkTotal-sparkPaid);
+    const careSpent=cur().spent.care||0;
+    const careOpen=Math.max(0,careBudget-careSpent);
+    const savingPaid=cur().savingDone?config.saving:0;
+    const savingOpen=cur().savingDone?0:config.saving;
+    const transferPaid=cur().revolutTransferred?revoPlanned:0;
+    const transferOpen=cur().revolutTransferred?0:revoPlanned;
+    const sparkRest=config.income-sparkPaid-careSpent-savingPaid-transferPaid;
+    const sparkReserved=sparkOpen+careOpen+savingOpen+transferOpen;
+    const sparkFree=sparkRest-sparkReserved;
+    $('#sparkAccountRest').textContent=fmt.format(sparkRest);
+    $('#sparkReserved').textContent=fmt.format(sparkReserved);
+    $('#sparkReallyFree').textContent=fmt.format(sparkFree);
+
+    const revoPaidFixed=cur().revoDone.reduce((a,i)=>a+(config.revoFixed[i]?.[1]||0),0);
+    const revoOpenFixed=Math.max(0,revoFixedTotal-revoPaidFixed);
+    const revoSpent=Object.entries(config.budgets).filter(([,b])=>b.account==='Revolut').reduce((a,[k])=>a+(cur().spent[k]||0),0);
+    const revoOpenBudgets=Object.entries(config.budgets).filter(([,b])=>b.account==='Revolut').reduce((a,[k,b])=>a+Math.max(0,b.limit-(cur().spent[k]||0)),0);
+    const revoRest=revoPlanned-revoPaidFixed-revoSpent;
+    const revoFree=revoRest-revoOpenFixed-revoOpenBudgets;
+    $('#revoAccountRest').textContent=fmt.format(revoRest);
+    $('#revoReservedFixed').textContent=fmt.format(revoOpenFixed);
+    $('#revoReservedBudgets').textContent=fmt.format(revoOpenBudgets);
+    $('#revoReallyFree').textContent=fmt.format(revoFree);
   }
 
   function renderHistory(){
@@ -216,11 +288,12 @@
   document.addEventListener('change',e=>{
     const t=e.target;
     if(t.id==='monthSelect'){store.current=t.value;ensureMonth(store.current);render();return}
-    if(t.id==='savingDone'){cur().savingDone=t.checked;save();return}
+    if(t.id==='savingDone'){cur().savingDone=t.checked;renderSummary();save();return}
+    if(t.id==='revolutTransferred'){cur().revolutTransferred=t.checked;renderSummary();save();return}
     if(t.matches('input[data-group]')){
       const i=Number(t.dataset.index),arr=t.dataset.group==='spark'?cur().sparkDone:cur().revoDone;
       const pos=arr.indexOf(i);if(t.checked&&pos<0)arr.push(i);if(!t.checked&&pos>=0)arr.splice(pos,1);
-      renderFixed();save();
+      renderFixed();renderSummary();save();
     }
   });
 
@@ -228,12 +301,12 @@
     e.preventDefault();const v=Number(amount.value);
     if(!Number.isFinite(v)||v<=0||v>10000){message.textContent='Bitte einen gültigen Betrag eingeben.';return}
     const k=category.value;cur().spent[k]=(cur().spent[k]||0)+v;cur().history.push({key:k,amount:v,ts:Date.now()});
-    amount.value='';message.textContent=fmt.format(v)+' bei '+config.budgets[k].name+' gespeichert.';renderBudgets();renderHistory();save();
+    amount.value='';message.textContent=fmt.format(v)+' bei '+config.budgets[k].name+' gespeichert.';renderBudgets();renderHistory();renderSummary();save();
   });
 
   $('#undo').addEventListener('click',()=>{
     const last=cur().history.pop();if(!last){message.textContent='Keine Ausgabe zum Rückgängigmachen.';return}
-    cur().spent[last.key]=Math.max(0,(cur().spent[last.key]||0)-last.amount);message.textContent='Letzte Ausgabe zurückgenommen.';renderBudgets();renderHistory();save();
+    cur().spent[last.key]=Math.max(0,(cur().spent[last.key]||0)-last.amount);message.textContent='Letzte Ausgabe zurückgenommen.';renderBudgets();renderHistory();renderSummary();save();
   });
 
   $('#newMonth').addEventListener('click',()=>{

@@ -1,13 +1,5 @@
-# Finanzplaner PWA
+# Finanzplaner v2
 
-Diese Version speichert:
-- Haken bei Fixkosten
-- Sparstatus
-- Ausgaben je Budget
-- Historie pro Monat
+Neu: dynamische Kontoübersicht für Sparkasse und Revolut.
 
-Dauerhafte Speicherung erfolgt lokal im Browser via localStorage.
-Zusätzlich gibt es Backup Export/Import als JSON.
-
-Für iPhone-Nutzung muss der Ordner über HTTPS gehostet werden.
-Danach in Safari: Teilen → Zum Home-Bildschirm.
+Die bestehende Speicherung bleibt unter `financePlannerV1` erhalten. Alte Monatsdaten werden automatisch um das neue Feld `revolutTransferred` ergänzt.
