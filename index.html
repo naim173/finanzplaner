@@ -68,7 +68,13 @@
 <body>
 <div class="app">
   <div class="top">
-    <div class="title"><h1>💶 Finanzplaner</h1><p>Alles bleibt auf diesem Gerät gespeichert.</p></div>
+    <div class="title">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <h1 id="greetingTitle">Hallo Naim 👋</h1>
+        <span class="pill" style="font-weight:700">Version 2.4</span>
+      </div>
+      <p id="todayDate">💶 Finanzplaner</p>
+    </div>
     <select id="monthSelect" class="month" aria-label="Monat auswählen"></select>
   </div>
 
@@ -204,6 +210,18 @@
   }
 
   const $=s=>document.querySelector(s);
+
+  function renderHeaderDate(){
+    const now=new Date();
+    const formatted=now.toLocaleDateString('de-DE',{
+      weekday:'long',
+      day:'2-digit',
+      month:'long',
+      year:'numeric'
+    });
+    const el=$('#todayDate');
+    if(el) el.textContent='📅 '+formatted.charAt(0).toUpperCase()+formatted.slice(1);
+  }
   const sparkList=$('#sparkList'),revoList=$('#revoFixedList'),budgetList=$('#budgetList'),history=$('#history');
   const category=$('#expenseCategory'),amount=$('#expenseAmount'),message=$('#message');
 
@@ -331,7 +349,7 @@
     box.style.display='block';
   }
 
-  function render(){buildMonthSelect();renderFixed();renderBudgets();renderSummary();renderHistory();showMonthOverview();save()}
+  function render(){renderHeaderDate();buildMonthSelect();renderFixed();renderBudgets();renderSummary();renderHistory();showMonthOverview();save()}
 
   document.addEventListener('change',e=>{
     const t=e.target;
