@@ -72,6 +72,17 @@
     <select id="monthSelect" class="month" aria-label="Monat auswählen"></select>
   </div>
 
+  <section id="monthOverview" class="card" style="display:none;margin-bottom:12px">
+    <div class="section-title">
+      <div>
+        <h2 id="monthOverviewTitle">📅 Neuer Monat</h2>
+        <div class="hint">Der neue Monat wurde automatisch angelegt. Dein letzter Monat bleibt gespeichert.</div>
+      </div>
+      <button id="dismissOverview" class="btn secondary" type="button" style="width:auto">Ausblenden</button>
+    </div>
+    <div id="monthOverviewBody"></div>
+  </section>
+
   <section class="grid summary">
     <div class="card"><div class="label">💰 Monatseinkommen</div><div class="value">3.100,00 €</div></div>
     <div class="card"><div class="label">🐷 Sparen</div><div class="value">450,00 €</div><label class="left sub"><input id="savingDone" type="checkbox"><span>überwiesen</span></label></div>
@@ -176,13 +187,21 @@
     }catch{return {current:monthKey(),months:{}}}
   }
   let store=load();
+  const actualMonth=monthKey();
+  if(!store.current) store.current=actualMonth;
   if(!store.months[store.current]) store.months[store.current]=blankMonth();
+
   Object.values(store.months).forEach(m=>{
     if(typeof m.revolutTransferred!=='boolean') m.revolutTransferred=false;
     if(typeof m.savingDone!=='boolean') m.savingDone=false;
     if(!m.spent) m.spent={};
     Object.keys(config.budgets).forEach(k=>{if(typeof m.spent[k]!=='number')m.spent[k]=0});
   });
+
+  if(store.current!==actualMonth){
+    if(!store.months[actualMonth]) store.months[actualMonth]=blankMonth();
+    store.current=actualMonth;
+  }
 
   const $=s=>document.querySelector(s);
   const sparkList=$('#sparkList'),revoList=$('#revoFixedList'),budgetList=$('#budgetList'),history=$('#history');
@@ -283,7 +302,36 @@
     });
   }
 
-  function render(){buildMonthSelect();renderFixed();renderBudgets();renderSummary();renderHistory();save()}
+  function previousMonthKey(k){
+    const [y,m]=k.split('-').map(Number);
+    return monthKey(new Date(y,m-2,1));
+  }
+
+  function showMonthOverview(){
+    const box=$('#monthOverview'),body=$('#monthOverviewBody');
+    if(!box||!body)return;
+    if(store.current!==actualMonth || store.lastOverviewMonth===actualMonth){box.style.display='none';return;}
+    const prevKey=previousMonthKey(actualMonth),prev=store.months[prevKey];
+    if(!prev){box.style.display='none';return;}
+    const [py,pm]=prevKey.split('-').map(Number);
+    const prevLabel=new Date(py,pm-1,1).toLocaleDateString('de-DE',{month:'long',year:'numeric'});
+    const totalSpent=Object.values(prev.spent||{}).reduce((a,v)=>a+(Number(v)||0),0);
+    const rows=Object.entries(config.budgets).map(([k,b])=>{
+      const spent=(prev.spent&&Number(prev.spent[k]))||0;
+      return '<div class="row"><span>'+b.name+'</span><strong>'+fmt.format(spent)+'</strong></div>';
+    }).join('');
+    $('#monthOverviewTitle').textContent='📅 Rückblick '+prevLabel;
+    body.innerHTML=
+      '<div class="grid summary" style="margin-bottom:10px">'+
+        '<div class="card"><div class="label">💸 Budget-Ausgaben</div><div class="value">'+fmt.format(totalSpent)+'</div></div>'+
+        '<div class="card"><div class="label">🏦 Sparkasse bezahlt</div><div class="value">'+((prev.sparkDone||[]).length)+'/'+config.sparkFixed.length+'</div></div>'+
+        '<div class="card"><div class="label">💳 Revolut Fixkosten</div><div class="value">'+((prev.revoDone||[]).length)+'/'+config.revoFixed.length+'</div></div>'+
+        '<div class="card"><div class="label">🐷 Sparen</div><div class="value">'+(prev.savingDone?'✅':'—')+'</div></div>'+
+      '</div>'+rows;
+    box.style.display='block';
+  }
+
+  function render(){buildMonthSelect();renderFixed();renderBudgets();renderSummary();renderHistory();showMonthOverview();save()}
 
   document.addEventListener('change',e=>{
     const t=e.target;
@@ -324,6 +372,12 @@
     try{const x=JSON.parse(await f.text());if(!x.months)throw new Error();store=x;ensureMonth(store.current||monthKey());message.textContent='Backup importiert.';render()}
     catch{message.textContent='Backup konnte nicht gelesen werden.'}
     e.target.value='';
+  });
+
+  $('#dismissOverview').addEventListener('click',()=>{
+    store.lastOverviewMonth=actualMonth;
+    save();
+    $('#monthOverview').style.display='none';
   });
 
   if('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
