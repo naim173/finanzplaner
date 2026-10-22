@@ -96,7 +96,7 @@
     <div class="title">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <h1 id="greetingTitle">Hallo Naim 👋</h1>
-        <span class="pill" style="font-weight:700">Version 2.8</span>
+        <span class="pill" style="font-weight:700">Version 2.9</span>
       </div>
       <p id="todayDate">💶 Finanzplaner</p>
     </div>
@@ -161,8 +161,8 @@
   <section class="card" style="margin-top:12px">
     <div class="section-title">
       <div>
-        <h2>📆 Monatsvergleich</h2>
-        <div class="hint">Neutraler Vergleich zum vorherigen Monat.</div>
+        <h2>📆 Revolut-Monatsvergleich</h2>
+        <div class="hint">Vergleich deiner variablen Revolut-Ausgaben: Tanken, Einkaufen, ME und Date.</div>
       </div>
     </div>
     <div id="monthCompare" class="compare-grid"></div>
@@ -457,10 +457,19 @@
   }
 
   function renderMonthCompare(){
+    const revolutKeys=Object.entries(config.budgets)
+      .filter(([k,b])=>b.account==='Revolut')
+      .map(([k])=>k);
+
+    const sumRevolutSpent=(month)=>{
+      if(!month)return null;
+      return revolutKeys.reduce((sum,k)=>sum+(Number(month.spent?.[k])||0),0);
+    };
+
     const current=cur();
     const prev=store.months[previousMonthKey(store.current)];
-    const currentSpent=Object.values(current.spent||{}).reduce((a,v)=>a+(Number(v)||0),0);
-    const prevSpent=prev?Object.values(prev.spent||{}).reduce((a,v)=>a+(Number(v)||0),0):null;
+    const currentSpent=sumRevolutSpent(current) ?? 0;
+    const prevSpent=sumRevolutSpent(prev);
     const diff=prevSpent===null?null:currentSpent-prevSpent;
 
     const [y,m]=store.current.split('-').map(Number);
@@ -470,8 +479,8 @@
     const prevLabel=new Date(py,pm-1,1).toLocaleDateString('de-DE',{month:'long'});
 
     monthCompare.innerHTML=
-      '<div class="compare-card"><div class="label">📍 '+currentLabel+'</div><div class="compare-value">'+fmt.format(currentSpent)+'</div><div class="sub">Budget-Ausgaben</div></div>'+
-      '<div class="compare-card"><div class="label">◀️ '+prevLabel+'</div><div class="compare-value">'+(prevSpent===null?'—':fmt.format(prevSpent))+'</div><div class="sub">'+(prevSpent===null?'Noch keine Daten':'Budget-Ausgaben')+'</div></div>'+
+      '<div class="compare-card"><div class="label">💳 '+currentLabel+'</div><div class="compare-value">'+fmt.format(currentSpent)+'</div><div class="sub">Revolut-Ausgaben</div></div>'+
+      '<div class="compare-card"><div class="label">◀️ '+prevLabel+'</div><div class="compare-value">'+(prevSpent===null?'—':fmt.format(prevSpent))+'</div><div class="sub">'+(prevSpent===null?'Noch keine Daten':'Revolut-Ausgaben')+'</div></div>'+
       '<div class="compare-card"><div class="label">↔️ Unterschied</div><div class="compare-value">'+(diff===null?'—':((diff>0?'+':'')+fmt.format(diff)))+'</div><div class="sub">rein informativ, ohne Bewertung</div></div>';
   }
 
