@@ -67,6 +67,11 @@
     .detail-row{display:flex;justify-content:space-between;gap:12px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
     .detail-date{font-size:12px;color:var(--muted);margin-top:2px}
     .detail-summary{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+    .transfer-grid{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end}
+    .transfer-history{margin-top:12px}
+    .transfer-row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+    .transfer-row:last-child{border-bottom:0}
+    @media(max-width:760px){.transfer-grid{grid-template-columns:1fr}.transfer-grid .btn{width:100%}}
     .pill{font-size:12px;color:var(--muted);border:1px solid var(--line);padding:6px 8px;border-radius:999px;background:#fff}
     @media(max-width:760px){
       .summary{grid-template-columns:1fr 1fr}.two,.accounts{grid-template-columns:1fr}.budgets{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}.btn{width:100%}
@@ -81,7 +86,7 @@
     <div class="title">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <h1 id="greetingTitle">Hallo Naim 👋</h1>
-        <span class="pill" style="font-weight:700">Version 2.5</span>
+        <span class="pill" style="font-weight:700">Version 2.6</span>
       </div>
       <p id="todayDate">💶 Finanzplaner</p>
     </div>
@@ -164,6 +169,19 @@
   </section>
 
   <section class="card" style="margin-top:12px">
+    <h2>🔄 Budget verschieben</h2>
+    <div class="hint">Nur zwischen Revolut-Budgets. Das Revolut-Gesamtbudget bleibt gleich.</div>
+    <form id="transferForm" class="transfer-grid">
+      <div><label class="small" for="transferFrom">Von</label><select id="transferFrom"></select></div>
+      <div><label class="small" for="transferTo">Zu</label><select id="transferTo"></select></div>
+      <div><label class="small" for="transferAmount">Betrag in €</label><input id="transferAmount" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="z. B. 40,00"></div>
+      <button class="btn" type="submit">Verschieben</button>
+    </form>
+    <div id="transferMessage" class="msg" aria-live="polite"></div>
+    <div id="transferHistory" class="transfer-history"></div>
+  </section>
+
+  <section class="card" style="margin-top:12px">
     <h2>➕ Ausgabe eintragen</h2>
     <div class="hint">Pflege ist als Sparkasse/Bar geführt, die anderen Budgets über Revolut.</div>
     <form id="expenseForm" class="form-grid">
@@ -224,6 +242,9 @@
     if(typeof m.savingDone!=='boolean') m.savingDone=false;
     if(!m.spent) m.spent={};
     Object.keys(config.budgets).forEach(k=>{if(typeof m.spent[k]!=='number')m.spent[k]=0});
+    if(!m.budgetAdjustments)m.budgetAdjustments={};
+    Object.keys(config.budgets).forEach(k=>{if(typeof m.budgetAdjustments[k]!=='number')m.budgetAdjustments[k]=0});
+    if(!Array.isArray(m.transfers))m.transfers=[];
   });
 
   if(store.current!==actualMonth){
@@ -246,10 +267,18 @@
   }
   const sparkList=$('#sparkList'),revoList=$('#revoFixedList'),budgetList=$('#budgetList'),history=$('#history');
   const category=$('#expenseCategory'),amount=$('#expenseAmount'),message=$('#message');
+  const transferFrom=$('#transferFrom'),transferTo=$('#transferTo'),transferAmount=$('#transferAmount'),transferMessage=$('#transferMessage'),transferHistory=$('#transferHistory');
 
   function save(){localStorage.setItem(KEY,JSON.stringify(store))}
   function cur(){return store.months[store.current]}
-  function ensureMonth(k){if(!store.months[k])store.months[k]=blankMonth();if(typeof store.months[k].revolutTransferred!=='boolean')store.months[k].revolutTransferred=false}
+  function effectiveLimit(key){return config.budgets[key].limit+((cur().budgetAdjustments&&cur().budgetAdjustments[key])||0)}
+  function ensureMonth(k){
+    if(!store.months[k])store.months[k]=blankMonth();
+    if(typeof store.months[k].revolutTransferred!=='boolean')store.months[k].revolutTransferred=false;
+    if(!store.months[k].budgetAdjustments)store.months[k].budgetAdjustments={};
+    Object.keys(config.budgets).forEach(x=>{if(typeof store.months[k].budgetAdjustments[x]!=='number')store.months[k].budgetAdjustments[x]=0});
+    if(!Array.isArray(store.months[k].transfers))store.months[k].transfers=[];
+  }
 
   function buildMonthSelect(){
     const sel=$('#monthSelect');sel.innerHTML='';
@@ -283,14 +312,23 @@
     budgetList.innerHTML='';category.innerHTML='';
     let total=0;
     Object.entries(config.budgets).forEach(([k,b])=>{
-      total+=b.limit;
-      const spent=cur().spent[k]||0,remain=b.limit-spent,pct=Math.min(100,Math.max(0,spent/b.limit*100));
+      const limit=effectiveLimit(k);total+=limit;
+      const spent=cur().spent[k]||0,remain=limit-spent,pct=Math.min(100,Math.max(0,spent/limit*100));
       const c=document.createElement('div');c.className='budget';c.tabIndex=0;c.setAttribute('role','button');c.dataset.budgetKey=k;c.setAttribute('aria-label',b.name+' Ausgaben anzeigen');
-      c.innerHTML='<div class="budget-head"><span>'+b.name+'</span><span class="budget-limit">'+fmt.format(b.limit)+'</span></div><div class="sub">'+b.account+'</div><div class="bar"><div class="fill" style="width:'+pct+'%"></div></div><div class="spent">💸 '+fmt.format(spent)+' ausgegeben</div><div class="remain '+(remain<0?'bad':'ok')+'">'+(remain<0?'⚠️ '+fmt.format(Math.abs(remain))+' drüber':'✅ '+fmt.format(remain)+' übrig')+'</div><div class="sub" style="margin-top:8px">Tippen für Details</div>';
+      c.innerHTML='<div class="budget-head"><span>'+b.name+'</span><span class="budget-limit">'+fmt.format(limit)+'</span></div><div class="sub">'+b.account+'</div><div class="bar"><div class="fill" style="width:'+pct+'%"></div></div><div class="spent">💸 '+fmt.format(spent)+' ausgegeben</div><div class="remain '+(remain<0?'bad':'ok')+'">'+(remain<0?'⚠️ '+fmt.format(Math.abs(remain))+' drüber':'✅ '+fmt.format(remain)+' übrig')+'</div><div class="sub" style="margin-top:8px">Tippen für Details</div>';
       budgetList.appendChild(c);
       const o=document.createElement('option');o.value=k;o.textContent=b.name+' · '+b.account;category.appendChild(o);
     });
     $('#budgetTotal').textContent='Budget gesamt '+fmt.format(total);
+    const prevFrom=transferFrom.value,prevTo=transferTo.value;
+    transferFrom.innerHTML='';transferTo.innerHTML='';
+    Object.entries(config.budgets).filter(([k,b])=>b.account==='Revolut').forEach(([k,b])=>{
+      const o1=document.createElement('option');o1.value=k;o1.textContent=b.name+' · '+fmt.format(effectiveLimit(k));transferFrom.appendChild(o1);
+      const o2=document.createElement('option');o2.value=k;o2.textContent=b.name+' · '+fmt.format(effectiveLimit(k));transferTo.appendChild(o2);
+    });
+    if([...transferFrom.options].some(o=>o.value===prevFrom))transferFrom.value=prevFrom;
+    if([...transferTo.options].some(o=>o.value===prevTo))transferTo.value=prevTo;
+    if(transferTo.options.length>1 && transferTo.value===transferFrom.value)transferTo.selectedIndex=1;
   }
 
   function renderSummary(){
@@ -346,7 +384,7 @@
     const summary=$('#budgetDetailSummary');
     const txs=(cur().history||[]).filter(t=>t.key===key).slice().sort((a,b)=>b.ts-a.ts);
     const total=txs.reduce((a,t)=>a+(Number(t.amount)||0),0);
-    const remaining=b.limit-total;
+    const limit=effectiveLimit(key);const remaining=limit-total;
 
     $('#budgetDetailTitle').textContent=b.name+' · '+selectedMonthLabel();
     $('#budgetDetailHint').textContent='Hier siehst du, wann du wie viel ausgegeben hast.';
@@ -369,6 +407,18 @@
     }
     panel.hidden=false;
     panel.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  function renderTransferHistory(){
+    transferHistory.innerHTML='';
+    const list=(cur().transfers||[]).slice().reverse().slice(0,10);
+    if(!list.length){transferHistory.innerHTML='<div class="sub">Noch keine Budgetverschiebungen in diesem Monat.</div>';return}
+    list.forEach(t=>{
+      const row=document.createElement('div');row.className='transfer-row';
+      const d=new Date(t.ts);
+      row.innerHTML='<span><strong>'+config.budgets[t.from].name+' → '+config.budgets[t.to].name+'</strong><div class="sub">'+d.toLocaleDateString('de-DE')+' · '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+' Uhr</div></span><strong>'+fmt.format(t.amount)+'</strong>';
+      transferHistory.appendChild(row);
+    });
   }
 
   function renderHistory(){
@@ -411,7 +461,7 @@
     box.style.display='block';
   }
 
-  function render(){renderHeaderDate();buildMonthSelect();renderFixed();renderBudgets();renderSummary();renderHistory();showMonthOverview();save()}
+  function render(){renderHeaderDate();buildMonthSelect();renderFixed();renderBudgets();renderSummary();renderHistory();renderTransferHistory();showMonthOverview();save()}
 
   document.addEventListener('change',e=>{
     const t=e.target;
@@ -441,6 +491,21 @@
   $('#closeBudgetDetail').addEventListener('click',()=>{
     $('#budgetDetail').hidden=true;
     activeBudgetKey=null;
+  });
+
+  $('#transferForm').addEventListener('submit',e=>{
+    e.preventDefault();
+    const from=transferFrom.value,to=transferTo.value,v=Number(transferAmount.value);
+    if(!from||!to||from===to){transferMessage.textContent='Bitte zwei unterschiedliche Revolut-Budgets auswählen.';return}
+    if(!Number.isFinite(v)||v<=0||v>10000){transferMessage.textContent='Bitte einen gültigen Betrag eingeben.';return}
+    const movable=effectiveLimit(from)-(cur().spent[from]||0);
+    if(v>movable){transferMessage.textContent='Du kannst höchstens '+fmt.format(Math.max(0,movable))+' aus diesem Budget verschieben.';return}
+    cur().budgetAdjustments[from]=(cur().budgetAdjustments[from]||0)-v;
+    cur().budgetAdjustments[to]=(cur().budgetAdjustments[to]||0)+v;
+    cur().transfers.push({from,to,amount:v,ts:Date.now()});
+    transferAmount.value='';
+    transferMessage.textContent=fmt.format(v)+' von '+config.budgets[from].name+' zu '+config.budgets[to].name+' verschoben.';
+    renderBudgets();renderSummary();renderTransferHistory();if(activeBudgetKey)renderBudgetDetail(activeBudgetKey);save();
   });
 
   $('#expenseForm').addEventListener('submit',e=>{
