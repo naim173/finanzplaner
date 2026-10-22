@@ -71,6 +71,16 @@
     .transfer-history{margin-top:12px}
     .transfer-row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
     .transfer-row:last-child{border-bottom:0}
+    .tx-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+    .mini-btn{min-height:34px;border:1px solid var(--line);background:#fff;color:var(--text);border-radius:10px;padding:0 10px;font-size:13px;font-weight:650;cursor:pointer}
+    .mini-btn.danger{color:var(--bad)}
+    .edit-grid{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;margin-top:8px}
+    .compare-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+    .compare-card{border:1px solid var(--line);border-radius:14px;padding:12px;background:#fff}
+    .compare-value{font-size:20px;font-weight:750;margin-top:4px}
+    .filters{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-top:10px}
+    @media(max-width:760px){.compare-grid{grid-template-columns:1fr}.filters{grid-template-columns:1fr}}
+    @media(max-width:760px){.edit-grid{grid-template-columns:1fr}.edit-grid .mini-btn{width:100%}}
     @media(max-width:760px){.transfer-grid{grid-template-columns:1fr}.transfer-grid .btn{width:100%}}
     .pill{font-size:12px;color:var(--muted);border:1px solid var(--line);padding:6px 8px;border-radius:999px;background:#fff}
     @media(max-width:760px){
@@ -86,7 +96,7 @@
     <div class="title">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <h1 id="greetingTitle">Hallo Naim 👋</h1>
-        <span class="pill" style="font-weight:700">Version 2.6</span>
+        <span class="pill" style="font-weight:700">Version 2.8</span>
       </div>
       <p id="todayDate">💶 Finanzplaner</p>
     </div>
@@ -148,6 +158,16 @@
     </div>
   </section>
 
+  <section class="card" style="margin-top:12px">
+    <div class="section-title">
+      <div>
+        <h2>📆 Monatsvergleich</h2>
+        <div class="hint">Neutraler Vergleich zum vorherigen Monat.</div>
+      </div>
+    </div>
+    <div id="monthCompare" class="compare-grid"></div>
+  </section>
+
   <section class="card budget-wrap">
     <div class="section-title">
       <div><h2>📊 Monatsbudgets</h2><div class="hint">Nur hier werden einzelne Ausgaben eingetragen.</div></div>
@@ -193,7 +213,12 @@
   </section>
 
   <section class="card history">
-    <div class="section-title"><div><h2>🧾 Letzte Ausgaben</h2><div class="hint">Zur Kontrolle und zum Rückgängigmachen.</div></div><button id="undo" type="button" class="btn secondary">↩️ Letzte zurück</button></div>
+    <div class="section-title"><div><h2>🧾 Ausgaben</h2><div class="hint">Suchen und filtern nach Kategorie oder Betrag.</div></div><button id="undo" type="button" class="btn secondary">↩️ Letzte zurück</button></div>
+    <div class="filters">
+      <div><label class="small" for="historySearch">Suche</label><input id="historySearch" type="text" placeholder="z. B. Tanken oder 45"></div>
+      <div><label class="small" for="historyCategory">Kategorie</label><select id="historyCategory"><option value="">Alle</option></select></div>
+      <div><label class="small" for="historyMin">Mindestens €</label><input id="historyMin" type="number" min="0" step="0.01" placeholder="0"></div>
+    </div>
     <div id="history"></div>
   </section>
 
@@ -268,6 +293,7 @@
   const sparkList=$('#sparkList'),revoList=$('#revoFixedList'),budgetList=$('#budgetList'),history=$('#history');
   const category=$('#expenseCategory'),amount=$('#expenseAmount'),message=$('#message');
   const transferFrom=$('#transferFrom'),transferTo=$('#transferTo'),transferAmount=$('#transferAmount'),transferMessage=$('#transferMessage'),transferHistory=$('#transferHistory');
+  const historySearch=$('#historySearch'),historyCategory=$('#historyCategory'),historyMin=$('#historyMin'),monthCompare=$('#monthCompare');
 
   function save(){localStorage.setItem(KEY,JSON.stringify(store))}
   function cur(){return store.months[store.current]}
@@ -323,12 +349,19 @@
     const prevFrom=transferFrom.value,prevTo=transferTo.value;
     transferFrom.innerHTML='';transferTo.innerHTML='';
     Object.entries(config.budgets).filter(([k,b])=>b.account==='Revolut').forEach(([k,b])=>{
-      const o1=document.createElement('option');o1.value=k;o1.textContent=b.name+' · '+fmt.format(effectiveLimit(k));transferFrom.appendChild(o1);
-      const o2=document.createElement('option');o2.value=k;o2.textContent=b.name+' · '+fmt.format(effectiveLimit(k));transferTo.appendChild(o2);
+      const o1=document.createElement('option');o1.value=k;o1.textContent=b.name;transferFrom.appendChild(o1);
+      const o2=document.createElement('option');o2.value=k;o2.textContent=b.name;transferTo.appendChild(o2);
     });
     if([...transferFrom.options].some(o=>o.value===prevFrom))transferFrom.value=prevFrom;
     if([...transferTo.options].some(o=>o.value===prevTo))transferTo.value=prevTo;
     if(transferTo.options.length>1 && transferTo.value===transferFrom.value)transferTo.selectedIndex=1;
+
+    const selectedHistoryCat=historyCategory.value;
+    historyCategory.innerHTML='<option value="">Alle</option>';
+    Object.entries(config.budgets).forEach(([k,b])=>{
+      const o=document.createElement('option');o.value=k;o.textContent=b.name;historyCategory.appendChild(o);
+    });
+    if([...historyCategory.options].some(o=>o.value===selectedHistoryCat))historyCategory.value=selectedHistoryCat;
   }
 
   function renderSummary(){
@@ -401,12 +434,45 @@
         const row=document.createElement('div');
         row.className='detail-row';
         const d=new Date(t.ts);
-        row.innerHTML='<div><strong>'+d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'})+'</strong><div class="detail-date">'+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+' Uhr</div></div><strong>'+fmt.format(t.amount)+'</strong>';
+        const txIndex=(cur().history||[]).findIndex(x=>x.ts===t.ts && x.key===t.key && Number(x.amount)===Number(t.amount));
+        row.dataset.txIndex=String(txIndex);
+        row.innerHTML=
+          '<div><strong>'+d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'})+'</strong>'+
+          '<div class="detail-date">'+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+' Uhr</div>'+
+          '<div class="tx-actions">'+
+            '<button type="button" class="mini-btn edit-expense">Bearbeiten</button>'+
+            '<button type="button" class="mini-btn danger delete-expense">Löschen</button>'+
+          '</div></div>'+
+          '<strong>'+fmt.format(t.amount)+'</strong>';
         list.appendChild(row);
       });
     }
     panel.hidden=false;
     panel.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+
+  function previousMonthKey(k){
+    const [y,m]=k.split('-').map(Number);
+    return monthKey(new Date(y,m-2,1));
+  }
+
+  function renderMonthCompare(){
+    const current=cur();
+    const prev=store.months[previousMonthKey(store.current)];
+    const currentSpent=Object.values(current.spent||{}).reduce((a,v)=>a+(Number(v)||0),0);
+    const prevSpent=prev?Object.values(prev.spent||{}).reduce((a,v)=>a+(Number(v)||0),0):null;
+    const diff=prevSpent===null?null:currentSpent-prevSpent;
+
+    const [y,m]=store.current.split('-').map(Number);
+    const currentLabel=new Date(y,m-1,1).toLocaleDateString('de-DE',{month:'long'});
+    const prevKey=previousMonthKey(store.current);
+    const [py,pm]=prevKey.split('-').map(Number);
+    const prevLabel=new Date(py,pm-1,1).toLocaleDateString('de-DE',{month:'long'});
+
+    monthCompare.innerHTML=
+      '<div class="compare-card"><div class="label">📍 '+currentLabel+'</div><div class="compare-value">'+fmt.format(currentSpent)+'</div><div class="sub">Budget-Ausgaben</div></div>'+
+      '<div class="compare-card"><div class="label">◀️ '+prevLabel+'</div><div class="compare-value">'+(prevSpent===null?'—':fmt.format(prevSpent))+'</div><div class="sub">'+(prevSpent===null?'Noch keine Daten':'Budget-Ausgaben')+'</div></div>'+
+      '<div class="compare-card"><div class="label">↔️ Unterschied</div><div class="compare-value">'+(diff===null?'—':((diff>0?'+':'')+fmt.format(diff)))+'</div><div class="sub">rein informativ, ohne Bewertung</div></div>';
   }
 
   function renderTransferHistory(){
@@ -421,47 +487,61 @@
     });
   }
 
+  function recalcSpent(){
+    const totals={};Object.keys(config.budgets).forEach(k=>totals[k]=0);
+    (cur().history||[]).forEach(t=>{if(totals[t.key]!==undefined)totals[t.key]+=Number(t.amount)||0});
+    cur().spent=totals;
+  }
+
+  function openExpenseEditor(row,txIndex){
+    const t=cur().history[txIndex];
+    if(!t)return;
+    if(row.querySelector('.edit-grid'))return;
+
+    const editor=document.createElement('div');
+    editor.className='edit-grid';
+
+    const sel=document.createElement('select');
+    sel.className='edit-category';
+    Object.entries(config.budgets).forEach(([k,b])=>{
+      const o=document.createElement('option');o.value=k;o.textContent=b.name;if(k===t.key)o.selected=true;sel.appendChild(o);
+    });
+
+    const inp=document.createElement('input');
+    inp.className='edit-amount';inp.type='number';inp.inputMode='decimal';inp.min='0.01';inp.step='0.01';inp.value=String(t.amount);
+
+    const saveBtn=document.createElement('button');
+    saveBtn.type='button';saveBtn.className='mini-btn save-expense';saveBtn.textContent='Speichern';
+
+    editor.append(sel,inp,saveBtn);
+    row.appendChild(editor);
+  }
+
   function renderHistory(){
     history.innerHTML='';
-    const h=cur().history.slice().reverse().slice(0,10);
-    if(!h.length){history.innerHTML='<div class="sub">Noch keine Ausgaben eingetragen.</div>';return}
-    h.forEach(t=>{
+    const q=(historySearch.value||'').trim().toLowerCase();
+    const cat=historyCategory.value||'';
+    const min=Number(historyMin.value)||0;
+
+    let items=(cur().history||[]).slice().reverse();
+    items=items.filter(t=>{
+      const name=(config.budgets[t.key]?.name||t.key).toLowerCase();
+      const amountText=String(t.amount).replace('.',',');
+      const matchesQ=!q||name.includes(q)||amountText.includes(q);
+      const matchesCat=!cat||t.key===cat;
+      const matchesMin=(Number(t.amount)||0)>=min;
+      return matchesQ&&matchesCat&&matchesMin;
+    });
+
+    if(!items.length){history.innerHTML='<div class="sub">Keine passenden Ausgaben gefunden.</div>';return}
+    items.forEach(t=>{
       const r=document.createElement('div');r.className='tx';
       r.innerHTML='<span>'+config.budgets[t.key].name+'<div class="sub">'+new Date(t.ts).toLocaleString('de-DE')+'</div></span><strong>'+fmt.format(t.amount)+'</strong>';
       history.appendChild(r);
     });
   }
 
-  function previousMonthKey(k){
-    const [y,m]=k.split('-').map(Number);
-    return monthKey(new Date(y,m-2,1));
-  }
-
-  function showMonthOverview(){
-    const box=$('#monthOverview'),body=$('#monthOverviewBody');
-    if(!box||!body)return;
-    if(store.current!==actualMonth || store.lastOverviewMonth===actualMonth){box.style.display='none';return;}
-    const prevKey=previousMonthKey(actualMonth),prev=store.months[prevKey];
-    if(!prev){box.style.display='none';return;}
-    const [py,pm]=prevKey.split('-').map(Number);
-    const prevLabel=new Date(py,pm-1,1).toLocaleDateString('de-DE',{month:'long',year:'numeric'});
-    const totalSpent=Object.values(prev.spent||{}).reduce((a,v)=>a+(Number(v)||0),0);
-    const rows=Object.entries(config.budgets).map(([k,b])=>{
-      const spent=(prev.spent&&Number(prev.spent[k]))||0;
-      return '<div class="row"><span>'+b.name+'</span><strong>'+fmt.format(spent)+'</strong></div>';
-    }).join('');
-    $('#monthOverviewTitle').textContent='📅 Rückblick '+prevLabel;
-    body.innerHTML=
-      '<div class="grid summary" style="margin-bottom:10px">'+
-        '<div class="card"><div class="label">💸 Budget-Ausgaben</div><div class="value">'+fmt.format(totalSpent)+'</div></div>'+
-        '<div class="card"><div class="label">🏦 Sparkasse bezahlt</div><div class="value">'+((prev.sparkDone||[]).length)+'/'+config.sparkFixed.length+'</div></div>'+
-        '<div class="card"><div class="label">💳 Revolut Fixkosten</div><div class="value">'+((prev.revoDone||[]).length)+'/'+config.revoFixed.length+'</div></div>'+
-        '<div class="card"><div class="label">🐷 Sparen</div><div class="value">'+(prev.savingDone?'✅':'—')+'</div></div>'+
-      '</div>'+rows;
-    box.style.display='block';
-  }
-
-  function render(){renderHeaderDate();buildMonthSelect();renderFixed();renderBudgets();renderSummary();renderHistory();renderTransferHistory();showMonthOverview();save()}
+  function render(){renderHeaderDate();buildMonthSelect();renderFixed();renderBudgets();renderSummary();renderHistory();renderTransferHistory();renderMonthCompare();showMonthOverview();save()}
 
   document.addEventListener('change',e=>{
     const t=e.target;
@@ -488,9 +568,46 @@
     }
   });
 
+  $('#budgetDetailList').addEventListener('click',e=>{
+    const row=e.target.closest('.detail-row');
+    if(!row)return;
+    const idx=Number(row.dataset.txIndex);
+    if(!Number.isInteger(idx)||idx<0)return;
+
+    if(e.target.classList.contains('edit-expense')){
+      openExpenseEditor(row,idx);
+      return;
+    }
+
+    if(e.target.classList.contains('delete-expense')){
+      if(!confirm('Diese Ausgabe wirklich löschen?'))return;
+      cur().history.splice(idx,1);
+      recalcSpent();
+      renderBudgets();renderHistory();renderSummary();renderBudgetDetail(activeBudgetKey);save();
+      return;
+    }
+
+    if(e.target.classList.contains('save-expense')){
+      const sel=row.querySelector('.edit-category');
+      const inp=row.querySelector('.edit-amount');
+      const v=Number(inp.value);
+      if(!sel||!Number.isFinite(v)||v<=0||v>10000)return;
+      cur().history[idx].key=sel.value;
+      cur().history[idx].amount=v;
+      recalcSpent();
+      const nextKey=sel.value;
+      renderBudgets();renderHistory();renderSummary();renderBudgetDetail(nextKey);save();
+      return;
+    }
+  });
+
   $('#closeBudgetDetail').addEventListener('click',()=>{
     $('#budgetDetail').hidden=true;
     activeBudgetKey=null;
+  });
+
+  [historySearch,historyCategory,historyMin].forEach(el=>{
+    el.addEventListener(el.tagName==='INPUT'?'input':'change',()=>renderHistory());
   });
 
   $('#transferForm').addEventListener('submit',e=>{
