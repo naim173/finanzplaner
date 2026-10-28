@@ -96,11 +96,12 @@
     <div class="title">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <h1 id="greetingTitle">Hallo Naim 👋</h1>
-        <span class="pill" style="font-weight:700">Version 2.9</span>
+        <span class="pill" style="font-weight:700">Version 3.0</span>
       </div>
       <p id="todayDate">💶 Finanzplaner</p>
     </div>
     <select id="monthSelect" class="month" aria-label="Monat auswählen"></select>
+    <button id="startNextMonth" class="btn secondary" type="button">🗓️ Neuen Monat starten</button>
   </div>
 
   <section id="monthOverview" class="card" style="display:none;margin-bottom:12px">
@@ -550,7 +551,32 @@
     });
   }
 
+  function nextMonthKey(k){
+    const [y,m]=k.split('-').map(Number);
+    return monthKey(new Date(y,m,1));
+  }
+
+  function startNextMonthManually(){
+    const nextKey=nextMonthKey(store.current);
+    const [y,m]=nextKey.split('-').map(Number);
+    const label=new Date(y,m-1,1).toLocaleDateString('de-DE',{month:'long',year:'numeric'});
+
+    if(!confirm(
+      'Neuen Abrechnungsmonat '+label+' starten?\n\n'+
+      'Der bisherige Monat bleibt vollständig gespeichert. Im neuen Monat starten Budgets, Häkchen, Ausgaben, Sparstatus und Revolut-Transfer frisch.'
+    )) return;
+
+    if(!store.months[nextKey]) store.months[nextKey]=blankMonth();
+    store.current=nextKey;
+    activeBudgetKey=null;
+    save();
+    render();
+    alert(label+' ist jetzt dein aktiver Abrechnungsmonat.');
+  }
+
   function render(){renderHeaderDate();buildMonthSelect();renderFixed();renderBudgets();renderSummary();renderHistory();renderTransferHistory();renderMonthCompare();showMonthOverview();save()}
+
+  $('#startNextMonth').addEventListener('click',startNextMonthManually);
 
   document.addEventListener('change',e=>{
     const t=e.target;
