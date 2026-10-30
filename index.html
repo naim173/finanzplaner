@@ -79,6 +79,12 @@
     .compare-card{border:1px solid var(--line);border-radius:14px;padding:12px;background:#fff}
     .compare-value{font-size:20px;font-weight:750;margin-top:4px}
     .filters{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-top:10px}
+    .month-controls{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .month-controls .month{min-height:44px}
+    @media(max-width:760px){
+      .month-controls{margin-top:24px;padding-top:8px;display:grid;grid-template-columns:1fr;gap:10px}
+      .month-controls .month,.month-controls .btn{width:100%}
+    }
     @media(max-width:760px){.compare-grid{grid-template-columns:1fr}.filters{grid-template-columns:1fr}}
     @media(max-width:760px){.edit-grid{grid-template-columns:1fr}.edit-grid .mini-btn{width:100%}}
     @media(max-width:760px){.transfer-grid{grid-template-columns:1fr}.transfer-grid .btn{width:100%}}
@@ -96,12 +102,16 @@
     <div class="title">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <h1 id="greetingTitle">Hallo Naim 👋</h1>
-        <span class="pill" style="font-weight:700">Version 3.0</span>
+        <span class="pill" style="font-weight:700">Version 3.3</span>
       </div>
       <p id="todayDate">💶 Finanzplaner</p>
     </div>
+    <div class="month-controls">
     <select id="monthSelect" class="month" aria-label="Monat auswählen"></select>
     <button id="startNextMonth" class="btn secondary" type="button">🗓️ Neuen Monat starten</button>
+    <button id="backToActiveMonth" class="btn secondary" type="button" style="display:none">↩️ Zum aktiven Monat</button>
+    <span id="viewMonthStatus" class="pill" style="display:none"></span>
+    </div>
   </div>
 
   <section id="monthOverview" class="card" style="display:none;margin-bottom:12px">
@@ -250,7 +260,8 @@
   function monthKey(d=new Date()){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')}
   function blankMonth(){
     const spent={};Object.keys(config.budgets).forEach(k=>spent[k]=0);
-    return {sparkDone:[],revoDone:[],savingDone:false,revolutTransferred:false,spent,history:[]};
+    const budgetAdjustments={};Object.keys(config.budgets).forEach(k=>budgetAdjustments[k]=0);
+    return {sparkDone:[],revoDone:[],savingDone:false,revolutTransferred:false,spent,history:[],budgetAdjustments,transfers:[]};
   }
   function load(){
     try{
@@ -261,7 +272,9 @@
   let store=load();
   const actualMonth=monthKey();
   if(!store.current) store.current=actualMonth;
+  if(!store.activeMonth) store.activeMonth=store.current;
   if(!store.months[store.current]) store.months[store.current]=blankMonth();
+  if(!store.months[store.activeMonth]) store.months[store.activeMonth]=blankMonth();
 
   Object.values(store.months).forEach(m=>{
     if(typeof m.revolutTransferred!=='boolean') m.revolutTransferred=false;
@@ -271,14 +284,40 @@
     if(!m.budgetAdjustments)m.budgetAdjustments={};
     Object.keys(config.budgets).forEach(k=>{if(typeof m.budgetAdjustments[k]!=='number')m.budgetAdjustments[k]=0});
     if(!Array.isArray(m.transfers))m.transfers=[];
+    if(!Array.isArray(m.history))m.history=[];
+    m.history.forEach((t,i)=>{if(!t.id)t.id='legacy-'+String(t.ts||0)+'-'+i});
   });
 
-  if(store.current!==actualMonth){
+  // Kalenderwechsel nur dann automatisch übernehmen, wenn der aktive
+  // Abrechnungsmonat noch hinter dem echten Kalendermonat liegt.
+  // Ein manuell vorgezogener Monat (z. B. November schon am 30.10.) bleibt aktiv.
+  if(store.activeMonth < actualMonth){
+    const wasViewingActive = store.current===store.activeMonth;
     if(!store.months[actualMonth]) store.months[actualMonth]=blankMonth();
-    store.current=actualMonth;
+    store.activeMonth=actualMonth;
+    if(wasViewingActive) store.current=actualMonth;
   }
 
   const $=s=>document.querySelector(s);
+
+  function renderMonthViewStatus(){
+    const back=$('#backToActiveMonth');
+    const status=$('#viewMonthStatus');
+    if(!back||!status)return;
+
+    if(store.current!==store.activeMonth){
+      const [y,m]=store.current.split('-').map(Number);
+      const [ay,am]=store.activeMonth.split('-').map(Number);
+      const viewed=new Date(y,m-1,1).toLocaleDateString('de-DE',{month:'long',year:'numeric'});
+      const active=new Date(ay,am-1,1).toLocaleDateString('de-DE',{month:'long',year:'numeric'});
+      status.textContent='👀 Ansicht: '+viewed+' · Aktiv: '+active;
+      status.style.display='';
+      back.style.display='';
+    }else{
+      status.style.display='none';
+      back.style.display='none';
+    }
+  }
 
   function renderHeaderDate(){
     const now=new Date();
@@ -310,11 +349,19 @@
   function buildMonthSelect(){
     const sel=$('#monthSelect');sel.innerHTML='';
     const now=new Date();
+    const keys=new Set(Object.keys(store.months||{}));
     for(let i=-6;i<=12;i++){
-      const d=new Date(now.getFullYear(),now.getMonth()+i,1),k=monthKey(d);
-      const o=document.createElement('option');o.value=k;o.textContent=d.toLocaleDateString('de-DE',{month:'long',year:'numeric'});
-      if(k===store.current)o.selected=true;sel.appendChild(o);
+      keys.add(monthKey(new Date(now.getFullYear(),now.getMonth()+i,1)));
     }
+    [...keys].sort().forEach(k=>{
+      const [y,m]=k.split('-').map(Number);
+      const d=new Date(y,m-1,1);
+      const o=document.createElement('option');o.value=k;
+      const baseLabel=d.toLocaleDateString('de-DE',{month:'long',year:'numeric'});
+      o.textContent=baseLabel+(k===store.activeMonth?' · aktiv':'');
+      if(k===store.current)o.selected=true;
+      sel.appendChild(o);
+    });
   }
 
   function fixedRow(group,item,i,checked){
@@ -394,7 +441,7 @@
     const revoPaidFixed=cur().revoDone.reduce((a,i)=>a+(config.revoFixed[i]?.[1]||0),0);
     const revoOpenFixed=Math.max(0,revoFixedTotal-revoPaidFixed);
     const revoSpent=Object.entries(config.budgets).filter(([,b])=>b.account==='Revolut').reduce((a,[k])=>a+(cur().spent[k]||0),0);
-    const revoOpenBudgets=Object.entries(config.budgets).filter(([,b])=>b.account==='Revolut').reduce((a,[k,b])=>a+Math.max(0,b.limit-(cur().spent[k]||0)),0);
+    const revoOpenBudgets=Object.entries(config.budgets).filter(([,b])=>b.account==='Revolut').reduce((a,[k])=>a+Math.max(0,effectiveLimit(k)-(cur().spent[k]||0)),0);
     const revoRest=revoPlanned-revoPaidFixed-revoSpent;
     const revoFree=revoRest-revoOpenFixed-revoOpenBudgets;
     $('#revoAccountRest').textContent=fmt.format(revoRest);
@@ -435,7 +482,7 @@
         const row=document.createElement('div');
         row.className='detail-row';
         const d=new Date(t.ts);
-        const txIndex=(cur().history||[]).findIndex(x=>x.ts===t.ts && x.key===t.key && Number(x.amount)===Number(t.amount));
+        const txIndex=(cur().history||[]).findIndex(x=>x.id===t.id);
         row.dataset.txIndex=String(txIndex);
         row.innerHTML=
           '<div><strong>'+d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'})+'</strong>'+
@@ -557,16 +604,29 @@
   }
 
   function startNextMonthManually(){
-    const nextKey=nextMonthKey(store.current);
+    const nextKey=nextMonthKey(store.activeMonth);
+    const [cy,cm]=store.activeMonth.split('-').map(Number);
     const [y,m]=nextKey.split('-').map(Number);
+    const currentLabel=new Date(cy,cm-1,1).toLocaleDateString('de-DE',{month:'long',year:'numeric'});
     const label=new Date(y,m-1,1).toLocaleDateString('de-DE',{month:'long',year:'numeric'});
 
-    if(!confirm(
-      'Neuen Abrechnungsmonat '+label+' starten?\n\n'+
-      'Der bisherige Monat bleibt vollständig gespeichert. Im neuen Monat starten Budgets, Häkchen, Ausgaben, Sparstatus und Revolut-Transfer frisch.'
-    )) return;
+    const nextAlreadyHasData=!!store.months[nextKey] && (
+      (store.months[nextKey].history&&store.months[nextKey].history.length) ||
+      (store.months[nextKey].sparkDone&&store.months[nextKey].sparkDone.length) ||
+      (store.months[nextKey].revoDone&&store.months[nextKey].revoDone.length) ||
+      store.months[nextKey].savingDone ||
+      store.months[nextKey].revolutTransferred ||
+      (store.months[nextKey].transfers&&store.months[nextKey].transfers.length)
+    );
 
-    if(!store.months[nextKey]) store.months[nextKey]=blankMonth();
+    let msg='Aktiver Monat ist '+currentLabel+'.\n\nMöchtest du wirklich '+label+' als neuen aktiven Abrechnungsmonat starten?\n\nDer bisherige Monat bleibt vollständig gespeichert.';
+    if(nextAlreadyHasData){
+      msg+='\n\nHinweis: Für '+label+' sind bereits Daten vorhanden. Diese werden NICHT gelöscht.';
+    }
+    if(!confirm(msg)) return;
+
+    ensureMonth(nextKey);
+    store.activeMonth=nextKey;
     store.current=nextKey;
     activeBudgetKey=null;
     save();
@@ -574,9 +634,14 @@
     alert(label+' ist jetzt dein aktiver Abrechnungsmonat.');
   }
 
-  function render(){renderHeaderDate();buildMonthSelect();renderFixed();renderBudgets();renderSummary();renderHistory();renderTransferHistory();renderMonthCompare();showMonthOverview();save()}
+  function render(){renderHeaderDate();renderMonthViewStatus();buildMonthSelect();renderFixed();renderBudgets();renderSummary();renderHistory();renderTransferHistory();renderMonthCompare();showMonthOverview();save()}
 
   $('#startNextMonth').addEventListener('click',startNextMonthManually);
+  $('#backToActiveMonth').addEventListener('click',()=>{
+    store.current=store.activeMonth;
+    activeBudgetKey=null;
+    render();
+  });
 
   document.addEventListener('change',e=>{
     const t=e.target;
@@ -663,7 +728,7 @@
   $('#expenseForm').addEventListener('submit',e=>{
     e.preventDefault();const v=Number(amount.value);
     if(!Number.isFinite(v)||v<=0||v>10000){message.textContent='Bitte einen gültigen Betrag eingeben.';return}
-    const k=category.value;cur().spent[k]=(cur().spent[k]||0)+v;cur().history.push({key:k,amount:v,ts:Date.now()});
+    const k=category.value;cur().spent[k]=(cur().spent[k]||0)+v;const now=Date.now();cur().history.push({id:'tx-'+now+'-'+Math.random().toString(36).slice(2,8),key:k,amount:v,ts:now});
     amount.value='';message.textContent=fmt.format(v)+' bei '+config.budgets[k].name+' gespeichert.';renderBudgets();renderHistory();renderSummary();if(activeBudgetKey===k)renderBudgetDetail(k);save();
   });
 
@@ -684,7 +749,7 @@
 
   $('#importInput').addEventListener('change',async e=>{
     const f=e.target.files&&e.target.files[0];if(!f)return;
-    try{const x=JSON.parse(await f.text());if(!x.months)throw new Error();store=x;ensureMonth(store.current||monthKey());message.textContent='Backup importiert.';render()}
+    try{const x=JSON.parse(await f.text());if(!x.months)throw new Error();store=x;if(!store.current)store.current=monthKey();if(!store.activeMonth)store.activeMonth=store.current;ensureMonth(store.current);ensureMonth(store.activeMonth);message.textContent='Backup importiert.';render()}
     catch{message.textContent='Backup konnte nicht gelesen werden.'}
     e.target.value='';
   });
